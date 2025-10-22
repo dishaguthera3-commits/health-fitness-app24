@@ -1,41 +1,50 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.tree import DecisionTreeClassifier
 import matplotlib.pyplot as plt
-from PIL import Image
 
-st.set_page_config(page_title="💚 SDG3 Health & Diet Recommender", layout="wide", page_icon="💪")
+# ----------------- Page config -----------------
+st.set_page_config(
+    page_title="💚 SDG3 Health & Diet Recommender",
+    layout="wide",
+    page_icon="💪"
+)
 
 st.title("💚 AI SDG3 Health & Wellbeing Recommender")
 st.markdown("Personalized diet, exercise, and lifestyle guidance powered by AI, aligned with **Sustainable Development Goal 3**.")
 
-# ----------------- Load Training Data -----------------
+# ----------------- Load training CSV -----------------
 @st.cache_data
 def load_data():
-    data = pd.read_csv("ai_health_training_data_250.csv")  # CSV in repo
+    df = pd.read_csv("ai_health_training_data_250.csv")
     le_gender = LabelEncoder()
     le_exercise = LabelEncoder()
-    data['gender_enc'] = le_gender.fit_transform(data['gender'])
-    data['exercise_enc'] = le_exercise.fit_transform(data['exercise_level'])
-    return data, le_gender, le_exercise
+    df['gender_enc'] = le_gender.fit_transform(df['gender'])
+    df['exercise_enc'] = le_exercise.fit_transform(df['exercise_level'])
+    return df, le_gender, le_exercise
 
-data, le_gender, le_exercise = load_data()
+try:
+    data, le_gender, le_exercise = load_data()
+except FileNotFoundError:
+    st.error("CSV file 'ai_health_training_data_250.csv' not found! Make sure it is in the same folder as app.py.")
+    st.stop()
 
 # ----------------- Train Models -----------------
 @st.cache_resource
-def train_models(data):
-    X = data[['weight','height','age','water_cups','gender_enc','exercise_enc']]
+def train_models(df):
+    X = df[['weight','height','age','water_cups','gender_enc','exercise_enc']]
     
-    reg_calories = RandomForestRegressor(n_estimators=100).fit(X, data['calories'])
-    reg_protein = RandomForestRegressor(n_estimators=100).fit(X, data['protein_g'])
-    reg_fat = RandomForestRegressor(n_estimators=100).fit(X, data['fat_g'])
-    reg_carb = RandomForestRegressor(n_estimators=100).fit(X, data['carb_g'])
+    reg_calories = RandomForestRegressor(n_estimators=50, random_state=42).fit(X, df['calories'])
+    reg_protein = RandomForestRegressor(n_estimators=50, random_state=42).fit(X, df['protein_g'])
+    reg_fat = RandomForestRegressor(n_estimators=50, random_state=42).fit(X, df['fat_g'])
+    reg_carb = RandomForestRegressor(n_estimators=50, random_state=42).fit(X, df['carb_g'])
     
-    clf_cardio = DecisionTreeClassifier().fit(X, data['cardio_plan'])
-    clf_strength = DecisionTreeClassifier().fit(X, data['strength_plan'])
-    clf_mobility = DecisionTreeClassifier().fit(X, data['mobility_plan'])
+    clf_cardio = DecisionTreeClassifier(random_state=42).fit(X, df['cardio_plan'])
+    clf_strength = DecisionTreeClassifier(random_state=42).fit(X, df['strength_plan'])
+    clf_mobility = DecisionTreeClassifier(random_state=42).fit(X, df['mobility_plan'])
     
     return reg_calories, reg_protein, reg_fat, reg_carb, clf_cardio, clf_strength, clf_mobility
 
@@ -51,13 +60,13 @@ water_cups = st.sidebar.number_input("Water intake (cups/day)", 0, 20, 6)
 exercise_level = st.sidebar.selectbox("Exercise level", ["sedentary","light","moderate","active","very active"])
 goal = st.sidebar.radio("Goal", ["maintain", "lose", "gain"], index=0)
 
-# ----------------- Prepare Input -----------------
+# ----------------- Prepare input for prediction -----------------
 gender_enc = le_gender.transform([gender])[0]
 exercise_enc = le_exercise.transform([exercise_level])[0]
 input_df = pd.DataFrame([[weight,height,age,water_cups,gender_enc,exercise_enc]],
                         columns=['weight','height','age','water_cups','gender_enc','exercise_enc'])
 
-# ----------------- Calculate BMI -----------------
+# ----------------- BMI -----------------
 bmi = weight / ((height/100)**2)
 if bmi < 18.5:
     bmi_cat = "Underweight"
@@ -79,7 +88,7 @@ pred_cardio = clf_cardio.predict(input_df)[0]
 pred_strength = clf_strength.predict(input_df)[0]
 pred_mobility = clf_mobility.predict(input_df)[0]
 
-# ----------------- Tabs for Layout -----------------
+# ----------------- Tabs -----------------
 tabs = st.tabs(["Body Metrics","Diet","Exercise","Hydration & Lifestyle"])
 
 with tabs[0]:
@@ -89,7 +98,7 @@ with tabs[0]:
     col2.metric("Height (cm)", height)
     col3.metric("BMI", f"{bmi:.1f} ({bmi_cat})")
     
-    # BMI Bar chart
+    # BMI bar chart
     fig, ax = plt.subplots(figsize=(8,1))
     ranges = [(10,18.5,'Under'), (18.5,25,'Normal'), (25,30,'Over'), (30,40,'Obese')]
     colors = ['#ffd1dc','#c8f7c5','#fff2b2','#ffb3b3']
